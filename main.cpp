@@ -17,7 +17,7 @@ using namespace std;
 class thread_pool
 {
 	std::atomic_bool done;
-	threadsafe_queue<std::function<void()>> work_queue;
+	threadsafe_queue<function_wrapper> work_queue;
 	vector<thread> threads;
 	join_threads joiner;
 
@@ -25,7 +25,7 @@ class thread_pool
 	{
 		while (done)
 		{
-			std::function<void()> task;
+			function_wrapper task;
 			if (work_queue.try_pop(task))
 			{
 				task();
@@ -61,9 +61,26 @@ public:
 	}
 
 	template<typename Function_type>
-	void submit(Function_type f)
+	future<typename std::result_of<Function_type()>::type> submit(Function_type f)
 	{
-		work_queue.push(function<void()>(f));
+		typedef typename std::result_of<Function_type()>::type result_type;
+		package_task<result_type()> task(move(f));
+		future<result_type> res(task.get_future());
+		work_queue.push(move(task));
+		return res;
+	}
+
+	void run_pending_task()
+	{
+		function_wrapper task;
+		if (work_queue.try_pop(task))
+		{
+			task();
+		}
+		else
+		{
+			this_thread::yield();
+		}
 	}
 
 };
